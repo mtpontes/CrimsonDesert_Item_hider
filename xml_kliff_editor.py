@@ -8,7 +8,8 @@ import traceback
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "python"))
+
+
 from paz_parse import parse_pamt, PazEntry
 from paz_unpack import extract_entry
 from paz_repack import repack_entry
@@ -17,6 +18,16 @@ TARGET_FILE = "phm_description_player_kliff.xml"
 
 # All PartInOutSocket items grouped by category
 SOCKET_CATEGORIES = [
+    ("Shield", [
+        "CD_MainWeapon_Shield_L",
+        "CD_MainWeapon_TowerShield_L",
+    ]),
+    ("Bow / Arrow", [
+        "CD_MainWeapon_Bow",
+        "CD_MainWeapon_Quiver",
+        "CD_MainWeapon_Arw",
+        "CD_MainWeapon_Arw_IN",
+    ]),
     ("Misc", [
         "CD_HyperspacePlug",
     ]),
@@ -76,16 +87,6 @@ SOCKET_CATEGORIES = [
         "CD_TwoHandWeapon_Rod",
         "CD_TwoHandWeapon_Scythe",
     ]),
-    ("Shield", [
-        "CD_MainWeapon_Shield_L",
-        "CD_MainWeapon_TowerShield_L",
-    ]),
-    ("Bow / Arrow", [
-        "CD_MainWeapon_Bow",
-        "CD_MainWeapon_Quiver",
-        "CD_MainWeapon_Arw",
-        "CD_MainWeapon_Arw_IN",
-    ]),
     ("Bomb", [
         "CD_MainWeapon_Bomb",
     ]),
@@ -124,11 +125,12 @@ SOCKET_CATEGORIES = [
 class KliffEditor(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("XML Editor")
-        self.geometry("620x780")
+        self.title("Kliff Weapon Visibility Editor")
+        self.geometry("620x820")
         self.resizable(True, True)
 
-        self.pamt_path = r"C:\Program Files (x86)\Steam\steamapps\common\Crimson Desert\0009\0.pamt"
+        self.base_dir = r"C:\Program Files (x86)\Steam\steamapps\common\Crimson Desert"
+        self.pamt_path = os.path.join(self.base_dir, "0009", "0.pamt")
         self.kliff_entry = None
         self._current_content = None
 
@@ -145,13 +147,23 @@ class KliffEditor(tk.Tk):
         top_frame = tk.Frame(self, padx=10, pady=5)
         top_frame.pack(fill=tk.X)
 
-        tk.Label(top_frame, text="Target archive:", anchor="w").pack(fill=tk.X)
+        tk.Label(top_frame, text="Crimson Desert Game Directory:", anchor="w", font=("Arial", 9, "bold")).pack(fill=tk.X)
 
-        info_frame = tk.Frame(top_frame)
-        info_frame.pack(fill=tk.X, pady=(0, 5))
-        tk.Label(info_frame, text=self.pamt_path, fg="#555", font=("Arial", 8)).pack(side=tk.LEFT)
-        self.lbl_status = tk.Label(info_frame, text="Initializing...", fg="blue")
-        self.lbl_status.pack(side=tk.RIGHT, padx=10)
+        path_row = tk.Frame(top_frame)
+        path_row.pack(fill=tk.X, pady=(2, 5))
+
+        self.lbl_path = tk.Label(path_row, text=self.pamt_path, fg="#555", font=("Arial", 8),
+                                 wraplength=500, justify=tk.LEFT, anchor="w")
+        self.lbl_path.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        btn_browse = tk.Button(path_row, text="Browse...", command=self._browse_base_dir)
+        btn_browse.pack(side=tk.RIGHT, padx=5)
+
+        status_row = tk.Frame(top_frame)
+        status_row.pack(fill=tk.X)
+        tk.Label(status_row, text="Status:", font=("Arial", 8, "bold")).pack(side=tk.LEFT)
+        self.lbl_status = tk.Label(status_row, text="Initializing...", fg="blue", font=("Arial", 8))
+        self.lbl_status.pack(side=tk.LEFT, padx=5)
 
         ttk.Separator(self, orient="horizontal").pack(fill=tk.X, padx=10)
 
@@ -159,11 +171,8 @@ class KliffEditor(tk.Tk):
         btn_frame = tk.Frame(self, padx=10, pady=5)
         btn_frame.pack(fill=tk.X)
 
-        self.btn_select_all = tk.Button(btn_frame, text="Select All", command=self._select_all, state=tk.DISABLED)
-        self.btn_select_all.pack(side=tk.LEFT, padx=(0, 5))
-
-        self.btn_deselect_all = tk.Button(btn_frame, text="Deselect All", command=self._deselect_all, state=tk.DISABLED)
-        self.btn_deselect_all.pack(side=tk.LEFT, padx=(0, 5))
+        self.btn_restore = tk.Button(btn_frame, text="Restore Backup", command=self._restore_backup, state=tk.DISABLED)
+        self.btn_restore.pack(side=tk.LEFT, padx=(0, 5))
 
         self.btn_apply = tk.Button(btn_frame, text="Apply Changes", command=self._apply,
                                    state=tk.DISABLED, font=("Arial", 10, "bold"))
@@ -206,13 +215,33 @@ class KliffEditor(tk.Tk):
         tk.Label(self, text=help_text, justify=tk.LEFT, fg="#555555", padx=10).pack(side=tk.BOTTOM, anchor="w", pady=(0, 5))
 
     # ------------------------------------------------------------------
-    def _select_all(self):
-        for var in self.check_vars.values():
-            var.set(True)
+    def _restore_backup(self):
+        if not self.kliff_entry:
+            return
+            
+        paz_file = self.kliff_entry.paz_file
+        backup_path = paz_file + ".bak"
+        
+        if not os.path.exists(backup_path):
+            messagebox.showinfo("Restore", "No backup found. Original archive is unchanged.")
+            return
+            
+        if messagebox.askyesno("Confirm Restore", "This will restore the PAZ archive to its original, unmodded state.\nAll your changes will be lost.\n\nContinue?"):
+            try:
+                shutil.copy2(backup_path, paz_file)
+                self._read_current_states()
+                messagebox.showinfo("Success", "Archive restored from backup successfully!")
+            except Exception as e:
+                traceback.print_exc()
+                messagebox.showerror("Error", f"Failed to restore backup:\n{e}")
 
-    def _deselect_all(self):
-        for var in self.check_vars.values():
-            var.set(False)
+    def _browse_base_dir(self):
+        new_dir = filedialog.askdirectory(initialdir=self.base_dir, title="Select Crimson Desert Directory")
+        if new_dir:
+            self.base_dir = new_dir
+            self.pamt_path = os.path.join(self.base_dir, "0009", "0.pamt")
+            self.lbl_path.config(text=self.pamt_path)
+            self._auto_load_pamt()
 
     # ------------------------------------------------------------------
     def _auto_load_pamt(self):
@@ -239,8 +268,13 @@ class KliffEditor(tk.Tk):
             self.lbl_status.config(text="Loaded successfully", fg="green")
             self._read_current_states()
 
-            self.btn_select_all.config(state=tk.NORMAL)
-            self.btn_deselect_all.config(state=tk.NORMAL)
+            # Check for backup
+            backup_path = self.kliff_entry.paz_file + ".bak"
+            if os.path.exists(backup_path):
+                self.btn_restore.config(state=tk.NORMAL)
+            else:
+                self.btn_restore.config(state=tk.DISABLED)
+
             self.btn_apply.config(state=tk.NORMAL)
 
         except Exception as e:
@@ -287,16 +321,16 @@ class KliffEditor(tk.Tk):
             with open(extracted_path, 'wb') as f:
                 f.write(content)
 
-            # Backup before repacking
+            # Backup before repacking (keep only the first pristine backup)
             paz_file = self.kliff_entry.paz_file
-            backup_ext = datetime.now().strftime("%Y%m%d_%H%M%S") + ".bak"
-            backup_path = paz_file + "." + backup_ext
-            shutil.copy2(paz_file, backup_path)
+            backup_path = paz_file + ".bak"
+            if not os.path.exists(backup_path):
+                shutil.copy2(paz_file, backup_path)
+                self.btn_restore.config(state=tk.NORMAL)
 
             repack_entry(extracted_path, self.kliff_entry, output_path=None)
 
-            messagebox.showinfo("Success",
-                                f"Changes applied and repacked!\n\nBackup saved as:\n{os.path.basename(backup_path)}")
+            messagebox.showinfo("Success", "Changes applied and repacked!")
 
             self._read_current_states()
 
