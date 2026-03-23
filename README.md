@@ -1,6 +1,9 @@
 # Crimson Desert Item Visibility Changer
 Thanks to lazorr410 for the unpacking tool!
-My gui/tool is 110% Cuck coded
+
+
+My gui/tool is 110% Vibe coded.
+
 
 A patcher to change item visibility in Crimson Desert.
 
