@@ -1,5 +1,6 @@
 import os
 import sys
+import string
 import re
 import shutil
 from datetime import datetime
@@ -8,7 +9,8 @@ import traceback
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-
+# Add the 'python' directory to sys.path so it can find the modules inside the 'python' folder
+sys.path.append(os.path.join(os.path.dirname(__file__), 'python'))
 
 from paz_parse import parse_pamt, PazEntry
 from paz_unpack import extract_entry
@@ -263,9 +265,28 @@ class KliffEditor(tk.Tk):
 
     # ------------------------------------------------------------------
     def _auto_load_pamt(self):
+        # 1. First check if current/default path exists
         if not os.path.exists(self.pamt_path):
-            messagebox.showerror("Error",
-                                 f"Could not find 0.pamt at:\n{self.pamt_path}\n\nMake sure the game is installed there.")
+            # 2. Try to find it automatically across all drives
+            self.lbl_status.config(text="Searching game...", fg="blue")
+            self.update()
+            
+            found_dir = self._find_game_dir_automatically()
+            if found_dir:
+                self.base_dir = found_dir
+                self.pamt_path = os.path.join(self.base_dir, "0009", "0.pamt")
+                self.lbl_path.config(text=self.pamt_path)
+            else:
+                # 3. Fallback: Ask the user to point to the directory
+                # We don't use error anymore, just an info message followed by browse
+                messagebox.showinfo("Game Not Found", 
+                                     "Crimson Desert was not found in the default location.\n\n"
+                                     "Please select the game installation folder (containing '0009').")
+                self._browse_base_dir()
+                return
+
+        # Double check after potential browse/discovery
+        if not os.path.exists(self.pamt_path):
             self.lbl_status.config(text="File not found", fg="red")
             return
 
@@ -319,6 +340,30 @@ class KliffEditor(tk.Tk):
         except Exception as e:
             traceback.print_exc()
             messagebox.showerror("Error", f"Failed to read file states:\n{e}")
+
+    @staticmethod
+    def _find_game_dir_automatically():
+        """Look for Crimson Desert in various common Steam/standalone paths across all drives."""
+        common_subs = [
+            r"Program Files (x86)\Steam\steamapps\common\Crimson Desert",
+            r"Program Files\Steam\steamapps\common\Crimson Desert",
+            r"SteamLibrary\steamapps\common\Crimson Desert",
+            r"Steam\steamapps\common\Crimson Desert",
+            r"Games\Crimson Desert",
+            r"Crimson Desert",
+        ]
+        
+        # Check all possible drives A-Z currently present in the system
+        # Use string.ascii_uppercase to get A-Z
+        drives = [f"{d}:\\" for d in string.ascii_uppercase if os.path.exists(f"{d}:\\")]
+        
+        for drive in drives:
+            for sub in common_subs:
+                candidate = os.path.join(drive, sub)
+                target = os.path.join(candidate, "0009", "0.pamt")
+                if os.path.exists(target):
+                    return candidate
+        return None
 
     # ------------------------------------------------------------------
     def _apply(self):
